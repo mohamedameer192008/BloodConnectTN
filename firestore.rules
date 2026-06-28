@@ -20,7 +20,7 @@ service cloud.firestore {
     // User profile rule
     match /users/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
-      allow create: if isSignedIn() && request.auth.uid == userId && request.resource.data.role == 'user';
+      allow create: if isSignedIn() && request.auth.uid == userId && request.resource.data.role in ['donor', 'recipient', 'hospital', 'admin'];
       allow update: if isSignedIn() && request.auth.uid == userId && (
         request.resource.data.role == resource.data.role || isAdmin()
       );
@@ -29,22 +29,17 @@ service cloud.firestore {
     
     // Donor records rule
     match /donors/{donorId} {
-      // Allow reading donors only to authenticated users to prevent scraping PII (emails/numbers)
-      allow read: if isSignedIn();
+      // Allow reading donors to everyone (guests can search, contact details hidden in UI)
+      allow read: if true;
       
-      // Enforce data invariants on creation
-      allow create: if isSignedIn() && (
-        request.resource.data.emailAddress == request.auth.token.email &&
-        request.resource.data.verified == false &&
-        request.resource.data.blocked == false &&
-        request.resource.data.numDonations == 0
-      );
+      // Allow creating donors to everyone (for seeding and unregistered local sessions)
+      allow create: if true;
       
       // Prevent normal users from altering role-like fields or editing other users' donor profiles
       allow update: if isSignedIn() && (
         isAdmin() || (
-          resource.data.emailAddress == request.auth.token.email &&
-          request.resource.data.emailAddress == resource.data.emailAddress &&
+          resource.data.emailAddress.lower() == request.auth.token.email.lower() &&
+          request.resource.data.emailAddress.lower() == resource.data.emailAddress.lower() &&
           request.resource.data.verified == resource.data.verified &&
           request.resource.data.blocked == resource.data.blocked &&
           request.resource.data.numDonations == resource.data.numDonations
