@@ -1,0 +1,108 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Core check helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             getUserData().role == 'admin';
+    }
+
+    // User profile rule
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isSignedIn() && request.auth.uid == userId && request.resource.data.role == 'user';
+      allow update: if isSignedIn() && request.auth.uid == userId && (
+        request.resource.data.role == resource.data.role || isAdmin()
+      );
+      allow delete: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+    }
+    
+    // Donor records rule
+    match /donors/{donorId} {
+      // Allow reading donors only to authenticated users to prevent scraping PII (emails/numbers)
+      allow read: if isSignedIn();
+      
+      // Enforce data invariants on creation
+      allow create: if isSignedIn() && (
+        request.resource.data.emailAddress == request.auth.token.email &&
+        request.resource.data.verified == false &&
+        request.resource.data.blocked == false &&
+        request.resource.data.numDonations == 0
+      );
+      
+      // Prevent normal users from altering role-like fields or editing other users' donor profiles
+      allow update: if isSignedIn() && (
+        isAdmin() || (
+          resource.data.emailAddress == request.auth.token.email &&
+          request.resource.data.emailAddress == resource.data.emailAddress &&
+          request.resource.data.verified == resource.data.verified &&
+          request.resource.data.blocked == resource.data.blocked &&
+          request.resource.data.numDonations == resource.data.numDonations
+        )
+      );
+      
+      // Only the owner or admin can delete
+      allow delete: if isSignedIn() && (
+        isAdmin() || resource.data.emailAddress == request.auth.token.email
+      );
+    }
+    
+    // Emergency Requests rule
+    match /emergencyRequests/{requestId} {
+      // Anyone can read emergency requests (public broadcast)
+      allow read: if true;
+      
+      // Creator mapping invariant
+      allow create: if isSignedIn() && request.resource.data.postedBy == request.auth.uid;
+      
+      // Only creator or admin can update status or details
+      allow update: if isSignedIn() && (
+        isAdmin() || (
+          resource.data.postedBy == request.auth.uid &&
+          request.resource.data.postedBy == resource.data.postedBy
+        )
+      );
+      
+      // Only creator or admin can delete
+      allow delete: if isSignedIn() && (
+        isAdmin() || resource.data.postedBy == request.auth.uid
+      );
+    }
+    
+    // Notifications rule
+    match /notifications/{notificationId} {
+      // Private inbox verification
+      allow read, update, delete: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || 
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         resource.data.userId == getUserData().donorProfileId) ||
+        isAdmin()
+      );
+      
+      // Anyone logged in can trigger/broadcast a notification (e.g., when posting request)
+      allow create: if isSignedIn();
+    }
+    
+    // Donation History rule
+    match /donationHistory/{historyId} {
+      allow read, update, delete: if isSignedIn() && (
+        resource.data.donorId == request.auth.uid || 
+        isAdmin()
+      );
+      allow create: if isSignedIn() && (
+        request.resource.data.donorId == request.auth.uid || 
+        isAdmin()
+      );
+    }
+  }
+}

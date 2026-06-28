@@ -1,0 +1,10 @@
+{
+  "name": "Emergency Blood Donor Finder",
+  "description": "A fully responsive emergency blood donor finder application for Tamil Nadu. Locate compatible donors near you instantly, manage availability, submit emergency blood requests, and access vital safety criteria.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
